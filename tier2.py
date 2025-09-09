@@ -2,6 +2,7 @@ import json
 import heapq
 from collections import defaultdict
 
+
 # === Baseline Deadlines (default) ===
 DEADLINE_TABLE = {
     "slam": 10,                 # ms baseline for SLAM
