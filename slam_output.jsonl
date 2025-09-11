@@ -1,5 +1,0 @@
-{"ts": 1718000001, "obstacle": true, "vo_ok": true, "detections": [{"near": true, "confidence": 0.8}]}
-{"ts": 1718000002, "obstacle": false, "vo_ok": false, "detections": [{"near": false, "confidence": 0.3}]}
-{"ts": 1718000003, "obstacle": false, "vo_ok": true, "detections": [{"near": false, "confidence": 0.9}]}
-{"ts": 1718000004, "obstacle": true, "vo_ok": true, "detections": [{"near": true, "confidence": 0.5}]}
-{"ts": 1718000005, "obstacle": false, "vo_ok": true, "detections": [{"near": false, "confidence": 0.7}]}

@@ -1,3 +1,4 @@
+# simulation.py
 import simpy
 import json
 import heapq
@@ -6,10 +7,6 @@ from collections import defaultdict
 import qoe
 import tier1
 import tier2
-<<<<<<< HEAD
-=======
-from tier3 import Tier3Cloud  # Import Tier-3 Cloud module
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
 
 # === Simulation parameters ===
 SIM_END = 500                # ms simulation horizon
@@ -18,7 +15,7 @@ BATCH_SIZE = 5               # Tier-1 batching size
 USE_HEFT = True              # If True => use Dif-HEFT; else Dif-Min
 SIMULATE_TIER1 = True        # If True => run SimPy processes for Tier-1 local tasks
 
-# === Create SimPy resources for Tier-1 hardware ===
+# === SimPy resources for Tier-1 hardware ===
 def create_resources(env):
     return {
         "CPU": simpy.Resource(env, capacity=1),
@@ -40,34 +37,17 @@ def task_source(env, slam_file, voice_file, task_queue):
         if ttype == "voice_recognition":
             last_voice = e.get("voice_text", "").lower()
         task = qoe.enrich_task(e, ttype, prev_task_ts, last_voice)
-
-        # Add extra fields needed for Tier-3
-        task["vehicle_id"] = e.get("vehicle_id", "unknown")
-        task["battery_level"] = e.get("battery_level", 80)
-        task["vehicle_speed"] = e.get("vehicle_speed", 50)
-        task["location"] = e.get("location", "Zone-1")
-        task["hazard_detected"] = e.get("hazard_detected", False)
-        task["hazard_type"] = e.get("hazard_type", None)
-
         prev_task_ts = ts
 
-<<<<<<< HEAD
         # Tier decision (Tier-1 vs Tier-2)
         task["assigned_tier"] = tier2.decide_tier(task)
 
         # push to EDF heap: (deadline, timestamp, task)
-=======
-        # Assign tier (Tier-1 vs Tier-2)
-        task["assigned_tier"] = tier2.decide_tier(task)
-
-        # Push into EDF heap
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
         heapq.heappush(task_queue, (task["deadline_ms"], task["timestamp"], task))
 
         # inter-arrival gap (simulated)
         yield env.timeout(5)
 
-<<<<<<< HEAD
 # === Local run process for a single task on a resource (SimPy) ===
 def run_local_task(env, task, resource_name, exec_time, resources, results, start_time, tier_label, metrics):
     with resources[resource_name].request() as req:
@@ -85,31 +65,6 @@ def scheduler(env, task_queue, results, resources, metrics):
 
     # local buffer for Tier-1 batching
     tier1_batch = []
-=======
-# === Metrics Updater ===
-def update_metrics(task, start, finish, tier, metrics):
-    deadline = task["deadline_ms"]
-    response = finish - start
-    met_deadline = response <= deadline
-
-    metrics["total_tasks"] += 1
-    metrics["tiers"][tier] += 1
-    metrics["QoE"][task["QoE_class"]] += 1
-
-    if met_deadline:
-        metrics["deadline_met"] += 1
-    else:
-        metrics["deadline_miss"] += 1
-
-    if tier == "Tier-1" or "LOCAL" in tier or "Fallback" in tier:
-        metrics["energy"]["Tier-1"] += task["local_energy"]
-    elif tier == "Tier-2":
-        metrics["energy"]["Tier-2"] += task["offload_energy"]
-
-# === Scheduler (Tier-1 + Tier-2 + Tier-3 integration) ===
-def scheduler(env, task_queue, results, resources, metrics, cloud):
-    tier2_used_time = 0
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
 
     while True:
         if task_queue:
@@ -122,7 +77,6 @@ def scheduler(env, task_queue, results, resources, metrics, cloud):
                 # add to local batch
                 tier1_batch.append((task, start_time))
 
-<<<<<<< HEAD
                 # if batch full -> schedule batch
                 if len(tier1_batch) >= BATCH_SIZE:
                     # extract task dicts
@@ -155,17 +109,6 @@ def scheduler(env, task_queue, results, resources, metrics, cloud):
                     tier1_batch.clear()
                 # end if batch full
 
-=======
-                        update_metrics(task, start_time, finish_time, "Tier-1", metrics)
-
-                        # Send execution log to Tier-3
-                        cloud.collect_data(task["vehicle_id"], {
-                            "task": task["task"],
-                            "finish_time": finish_time
-                        })
-
-            # --- Tier-2 remote execution ---
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
             else:
                 # Tier-2 remote execution attempt
                 exec_time = task["offload_time"]
@@ -175,57 +118,13 @@ def scheduler(env, task_queue, results, resources, metrics, cloud):
                     yield env.timeout(exec_time)
                     finish_time = env.now
                     tier2_used_time += exec_time
-<<<<<<< HEAD
                     results.append((finish_time, "Tier-2", task))
-=======
-                    results.append((finish_time, "REMOTE", task))
-
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
                     update_metrics(task, start_time, finish_time, "Tier-2", metrics)
-
-                    # Update fleet status to Tier-3
-                    cloud.update_fleet_status(
-                        task["vehicle_id"],
-                        {
-                            "battery": task["battery_level"],
-                            "speed": task["vehicle_speed"],
-                            "location": task["location"]
-                        }
-                    )
-
-                    # Report hazard if any
-                    if task["hazard_detected"]:
-                        cloud.report_hazard(
-                            task["vehicle_id"],
-                            task["hazard_type"],
-                            task["location"]
-                        )
-
                 else:
-<<<<<<< HEAD
                     # fallback -> push to tier1 batch
                     task["assigned_tier"] = "Tier-1"
                     tier1_batch.append((task, start_time))
                     # if batch full, handle in next loop iterations
-=======
-                    # Fallback to Tier-1 execution
-                    allocations = tier1.inter_core_schedule([task])
-                    for (ts, ttype), (res, ct) in allocations.items():
-                        with resources[res].request() as req:
-                            yield req
-                            yield env.timeout(ct)
-                            finish_time = env.now
-                            results.append((finish_time, f"FALLBACK-{res}", task))
-
-                            update_metrics(task, start_time, finish_time, "Fallback", metrics)
-
-                            # Send execution log to Tier-3
-                            cloud.collect_data(task["vehicle_id"], {
-                                "task": task["task"],
-                                "finish_time": finish_time
-                            })
-
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
         else:
             # no tasks: if there are pending tier1_batch tasks but not full, optionally schedule them after some wait
             # simple policy: if batch not empty and environment progressed enough, flush small batches after timeout
@@ -259,7 +158,6 @@ def scheduler(env, task_queue, results, resources, metrics, cloud):
                 # truly idle -> advance time a bit
                 yield env.timeout(1)
 
-<<<<<<< HEAD
 # === Metrics Updater ===
 def update_metrics(task, start, finish, tier, metrics):
     deadline = task["deadline_ms"]
@@ -281,16 +179,14 @@ def update_metrics(task, start, finish, tier, metrics):
     elif tier == "Tier-2":
         metrics["energy"]["Tier-2"] += task.get("offload_energy", 0)
 
-=======
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
 # === Simulation Runner ===
 def run_simulation(slam_file, voice_file):
     env = simpy.Environment()
     task_queue = []
     results = []
     resources = create_resources(env)
-    cloud = Tier3Cloud()
 
+    # metrics container
     metrics = {
         "total_tasks": 0,
         "deadline_met": 0,
@@ -302,7 +198,7 @@ def run_simulation(slam_file, voice_file):
 
     # start processes
     env.process(task_source(env, slam_file, voice_file, task_queue))
-    env.process(scheduler(env, task_queue, results, resources, metrics, cloud))
+    env.process(scheduler(env, task_queue, results, resources, metrics))
 
     env.run(until=SIM_END)
 
@@ -311,15 +207,12 @@ def run_simulation(slam_file, voice_file):
     for finish_time, where, task in results:
         print(f"[{where}] {task['task']} | ts={task['timestamp']} | deadline={task['deadline_ms']}ms | QoE={task['QoE_class']} | finish={finish_time:.1f}ms")
 
+    # --- Metrics Summary ---
     print("\n=== Metrics Summary ===")
     print(f"Total tasks: {metrics['total_tasks']}")
     print(f"Deadline met: {metrics['deadline_met']} | Deadline missed: {metrics['deadline_miss']}")
-<<<<<<< HEAD
     miss_ratio = (metrics['deadline_miss'] / metrics['total_tasks'] * 100) if metrics['total_tasks'] else 0
     print(f"Deadline miss ratio: {miss_ratio:.2f}%")
-=======
-    print(f"Deadline miss ratio: {(metrics['deadline_miss'] / metrics['total_tasks'] * 100 if metrics['total_tasks'] else 0):.2f}%")
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
 
     print("\nTier Distribution:")
     for tier, count in metrics["tiers"].items():
@@ -333,14 +226,8 @@ def run_simulation(slam_file, voice_file):
     for tier, energy in metrics["energy"].items():
         print(f"  {tier}: {energy:.2f}")
 
-    print("\n=== Fleet Report from Cloud ===")
-    print(json.dumps(cloud.generate_fleet_report(), indent=2))
-
-    print("\n=== Hazards Distributed by Cloud ===")
-    print(json.dumps(cloud.distribute_hazards(), indent=2))
-
     return results, metrics
 
-if __name__ == "__main__":
+if __name__ == "_main_":
     # Example usage
     run_simulation("slam_output.jsonl", "voice_output.jsonl")

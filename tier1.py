@@ -57,7 +57,6 @@ def inter_core_schedule(tasks):
         ET_table[best_res] += eet[best_res]
         U.remove(ti)
 
-<<<<<<< HEAD
     return allocations
 
 def dif_heft_schedule(tasks):
@@ -97,20 +96,3 @@ def add_to_tier1(task, batch_size=5, use_heft=False):
         TIER1_BUFFER.clear()
         return allocations
     return None
-=======
-    return allocations
-
-# === Add Task to Tier-1 Batch ===
-def add_to_tier1(task, batch_size=5):
-    """
-    Add task to Tier-1 buffer. 
-    When buffer reaches batch_size, schedule them together.
-    Returns allocations if batch executed, else None.
-    """
-    TIER1_BUFFER.append(task)
-    if len(TIER1_BUFFER) >= batch_size:
-        allocations = inter_core_schedule(TIER1_BUFFER)
-        TIER1_BUFFER.clear()
-        return allocations
-    return None
->>>>>>> 8e586a18d4902b8b433378ef7a7c378505790590
