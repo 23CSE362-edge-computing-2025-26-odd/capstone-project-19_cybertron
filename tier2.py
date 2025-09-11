@@ -1,5 +1,5 @@
 import json
-print("hello")
+
 # === Baseline Deadlines (default) ===
 DEADLINE_TABLE = {
     "slam": 10,                  # ms baseline for SLAM
