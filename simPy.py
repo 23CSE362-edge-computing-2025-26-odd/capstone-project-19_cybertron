@@ -1,10 +1,10 @@
 # simulation.py
-import simpy
+import simPy
 import json
 import heapq
 from collections import defaultdict
 
-import qoe
+import QoE
 import tier1
 import tier2
 
@@ -18,9 +18,9 @@ SIMULATE_TIER1 = True        # If True => run SimPy processes for Tier-1 local t
 # === SimPy resources for Tier-1 hardware ===
 def create_resources(env):
     return {
-        "CPU": simpy.Resource(env, capacity=1),
-        "GPU": simpy.Resource(env, capacity=1),
-        "DSP": simpy.Resource(env, capacity=1),
+        "CPU": simPy.Resource(env, capacity=1),
+        "GPU": simPy.Resource(env, capacity=1),
+        "DSP": simPy.Resource(env, capacity=1),
     }
 
 # === Task Source (generates tasks and pushes into EDF heap) ===
@@ -36,7 +36,7 @@ def task_source(env, slam_file, voice_file, task_queue):
     for ts, ttype, e in events:
         if ttype == "voice_recognition":
             last_voice = e.get("voice_text", "").lower()
-        task = qoe.enrich_task(e, ttype, prev_task_ts, last_voice)
+        task = QoE.enrich_task(e, ttype, prev_task_ts, last_voice)
         prev_task_ts = ts
 
         # Tier decision (Tier-1 vs Tier-2)
@@ -181,7 +181,7 @@ def update_metrics(task, start, finish, tier, metrics):
 
 # === Simulation Runner ===
 def run_simulation(slam_file, voice_file):
-    env = simpy.Environment()
+    env = simPy.Environment()
     task_queue = []
     results = []
     resources = create_resources(env)

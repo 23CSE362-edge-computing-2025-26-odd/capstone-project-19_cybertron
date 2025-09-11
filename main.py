@@ -3,7 +3,7 @@ import heapq
 import time
 import threading
 
-import  qoe         # QoE enrichment module
+import  QoE         # QoE enrichment module
 import tier1       # local edge node scheduling
 import tier2       # remote edge node scheduling
 
@@ -22,7 +22,7 @@ last_flush_time = time.time()
 # === Add Task ===
 def add_task(json_event, task_type, last_voice=None):
     """Add new task to EDF queue after QoE enrichment and tier assignment."""
-    task = qoe.enrich_task(json_event, task_type)
+    task = QoE.enrich_task(json_event, task_type)
     task["assigned_tier"] = tier2.decide_tier(task)
     heapq.heappush(task_queue, (task["deadline_ms"], task["timestamp"], task))
 

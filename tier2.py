@@ -1,4 +1,5 @@
 import json
+import tier1
 
 # === Baseline Deadlines (default) ===
 DEADLINE_TABLE = {
