@@ -1,17 +1,18 @@
-# simulation.py
 import simpy
 import json
 import heapq
+from collections import defaultdict
+
 import qoe
 import tier1
 import tier2
-from collections import defaultdict
+from tier3 import Tier3Cloud  # Import Tier-3 Cloud module
 
 # === Parameters ===
 SIM_END = 500          # ms simulation horizon
 MAX_TIER2_TIME = 100   # budget for Tier-2 (same as tier2.py)
 
-# === SimPy resources for Tier-1 hardware ===
+# === Create SimPy resources for Tier-1 hardware ===
 def create_resources(env):
     return {
         "CPU": simpy.Resource(env, capacity=1),
@@ -33,19 +34,48 @@ def task_source(env, slam_file, voice_file, task_queue):
         if ttype == "voice_recognition":
             last_voice = e.get("voice_text", "").lower()
         task = qoe.enrich_task(e, ttype, prev_task_ts, last_voice)
+
+        # Add extra fields needed for Tier-3
+        task["vehicle_id"] = e.get("vehicle_id", "unknown")
+        task["battery_level"] = e.get("battery_level", 80)
+        task["vehicle_speed"] = e.get("vehicle_speed", 50)
+        task["location"] = e.get("location", "Zone-1")
+        task["hazard_detected"] = e.get("hazard_detected", False)
+        task["hazard_type"] = e.get("hazard_type", None)
+
         prev_task_ts = ts
 
-        # assign tier (Tier-1 vs Tier-2)
+        # Assign tier (Tier-1 vs Tier-2)
         task["assigned_tier"] = tier2.decide_tier(task)
 
-        # push into EDF heap
+        # Push into EDF heap
         heapq.heappush(task_queue, (task["deadline_ms"], task["timestamp"], task))
 
         yield env.timeout(5)  # inter-arrival gap
 
-# === Scheduler with Tier-1 + Tier-2 integration ===
-def scheduler(env, task_queue, results, resources, metrics):
-    tier2_used_time = 0  # track Tier-2 budget
+# === Metrics Updater ===
+def update_metrics(task, start, finish, tier, metrics):
+    deadline = task["deadline_ms"]
+    response = finish - start
+    met_deadline = response <= deadline
+
+    metrics["total_tasks"] += 1
+    metrics["tiers"][tier] += 1
+    metrics["QoE"][task["QoE_class"]] += 1
+
+    if met_deadline:
+        metrics["deadline_met"] += 1
+    else:
+        metrics["deadline_miss"] += 1
+
+    if tier == "Tier-1" or "LOCAL" in tier or "Fallback" in tier:
+        metrics["energy"]["Tier-1"] += task["local_energy"]
+    elif tier == "Tier-2":
+        metrics["energy"]["Tier-2"] += task["offload_energy"]
+
+# === Scheduler (Tier-1 + Tier-2 + Tier-3 integration) ===
+def scheduler(env, task_queue, results, resources, metrics, cloud):
+    tier2_used_time = 0
 
     while True:
         if task_queue:
@@ -62,24 +92,46 @@ def scheduler(env, task_queue, results, resources, metrics):
                         finish_time = env.now
                         results.append((finish_time, f"LOCAL-{res}", task))
 
-                        # metrics update
                         update_metrics(task, start_time, finish_time, "Tier-1", metrics)
+
+                        # Send execution log to Tier-3
+                        cloud.collect_data(task["vehicle_id"], {
+                            "task": task["task"],
+                            "finish_time": finish_time
+                        })
 
             # --- Tier-2 remote execution ---
             else:
                 exec_time = task["offload_time"]
 
-                # check Tier-2 budget
                 if tier2_used_time + exec_time <= MAX_TIER2_TIME:
                     yield env.timeout(exec_time)
                     finish_time = env.now
                     tier2_used_time += exec_time
                     results.append((finish_time, "REMOTE", task))
 
-                    # metrics update
                     update_metrics(task, start_time, finish_time, "Tier-2", metrics)
+
+                    # Update fleet status to Tier-3
+                    cloud.update_fleet_status(
+                        task["vehicle_id"],
+                        {
+                            "battery": task["battery_level"],
+                            "speed": task["vehicle_speed"],
+                            "location": task["location"]
+                        }
+                    )
+
+                    # Report hazard if any
+                    if task["hazard_detected"]:
+                        cloud.report_hazard(
+                            task["vehicle_id"],
+                            task["hazard_type"],
+                            task["location"]
+                        )
+
                 else:
-                    # fallback to Tier-1
+                    # Fallback to Tier-1 execution
                     allocations = tier1.inter_core_schedule([task])
                     for (ts, ttype), (res, ct) in allocations.items():
                         with resources[res].request() as req:
@@ -88,33 +140,16 @@ def scheduler(env, task_queue, results, resources, metrics):
                             finish_time = env.now
                             results.append((finish_time, f"FALLBACK-{res}", task))
 
-                            # metrics update
                             update_metrics(task, start_time, finish_time, "Fallback", metrics)
+
+                            # Send execution log to Tier-3
+                            cloud.collect_data(task["vehicle_id"], {
+                                "task": task["task"],
+                                "finish_time": finish_time
+                            })
+
         else:
             yield env.timeout(1)
-
-# === Metrics Updater ===
-def update_metrics(task, start, finish, tier, metrics):
-    deadline = task["deadline_ms"]
-    response = finish - start
-    met_deadline = response <= deadline
-
-    # QoE-based metrics
-    metrics["total_tasks"] += 1
-    metrics["tiers"][tier] += 1
-    metrics["QoE"][task["QoE_class"]] += 1
-
-    # deadline stats
-    if met_deadline:
-        metrics["deadline_met"] += 1
-    else:
-        metrics["deadline_miss"] += 1
-
-    # energy accounting
-    if tier == "Tier-1" or "LOCAL" in tier or "Fallback" in tier:
-        metrics["energy"]["Tier-1"] += task["local_energy"]
-    elif tier == "Tier-2":
-        metrics["energy"]["Tier-2"] += task["offload_energy"]
 
 # === Simulation Runner ===
 def run_simulation(slam_file, voice_file):
@@ -122,8 +157,8 @@ def run_simulation(slam_file, voice_file):
     task_queue = []
     results = []
     resources = create_resources(env)
+    cloud = Tier3Cloud()
 
-    # metrics container
     metrics = {
         "total_tasks": 0,
         "deadline_met": 0,
@@ -134,23 +169,18 @@ def run_simulation(slam_file, voice_file):
     }
 
     env.process(task_source(env, slam_file, voice_file, task_queue))
-    env.process(scheduler(env, task_queue, results, resources, metrics))
+    env.process(scheduler(env, task_queue, results, resources, metrics, cloud))
 
     env.run(until=SIM_END)
 
     print("\n=== Simulation Results ===")
     for finish_time, where, task in results:
-        print(f"[{where}] {task['task']} "
-              f"| ts={task['timestamp']} "
-              f"| deadline={task['deadline_ms']}ms "
-              f"| QoE={task['QoE_class']} "
-              f"| finish={finish_time:.1f}ms")
+        print(f"[{where}] {task['task']} | ts={task['timestamp']} | deadline={task['deadline_ms']}ms | QoE={task['QoE_class']} | finish={finish_time:.1f}ms")
 
-    # --- Metrics Summary ---
     print("\n=== Metrics Summary ===")
     print(f"Total tasks: {metrics['total_tasks']}")
     print(f"Deadline met: {metrics['deadline_met']} | Deadline missed: {metrics['deadline_miss']}")
-    print(f"Deadline miss ratio: {(metrics['deadline_miss']/metrics['total_tasks']*100 if metrics['total_tasks'] else 0):.2f}%")
+    print(f"Deadline miss ratio: {(metrics['deadline_miss'] / metrics['total_tasks'] * 100 if metrics['total_tasks'] else 0):.2f}%")
 
     print("\nTier Distribution:")
     for tier, count in metrics["tiers"].items():
@@ -163,6 +193,12 @@ def run_simulation(slam_file, voice_file):
     print("\nEnergy Consumption (J):")
     for tier, energy in metrics["energy"].items():
         print(f"  {tier}: {energy:.2f}")
+
+    print("\n=== Fleet Report from Cloud ===")
+    print(json.dumps(cloud.generate_fleet_report(), indent=2))
+
+    print("\n=== Hazards Distributed by Cloud ===")
+    print(json.dumps(cloud.distribute_hazards(), indent=2))
 
     return results, metrics
 
