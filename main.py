@@ -3,7 +3,7 @@ import heapq
 import time
 import threading
 
-import qoe         # QoE enrichment module
+import  qoe         # QoE enrichment module
 import tier1       # local edge node scheduling
 import tier2       # remote edge node scheduling
 

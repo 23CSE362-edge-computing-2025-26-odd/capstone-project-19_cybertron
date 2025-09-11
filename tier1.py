@@ -1,9 +1,9 @@
 import heapq
 
-# === Hardware Profiles (example) ===
+# == Hardware Profiles (example) ==
 RESOURCES = ["CPU", "GPU", "DSP"]
 
-# === Batch Buffer ===
+# == Batch Buffer ==
 TIER1_BUFFER = []
 
 # === Build EET Table (from QoE enriched tasks) ===
