@@ -27,21 +27,25 @@ def decide_tier(task):
 
 # === Tier-2 Scheduler (batch mode) ===
 def schedule_tier2(tasks_all, max_time=200):
-    """
-    Schedule Tier-2 tasks in arrival order.
-    - Keeps total offload time under max_time budget.
-    - Pushes overflow tasks back to Tier-1 (fallback).
-    """
-    executed, fallback = [], []
-    used_time = 0
+    executed = []
+    fallback = []
+    used_time = 0.0
 
     for t in tasks_all:
-        if used_time + t["offload_time"] <= max_time:
+        off_t = float(t.get("offload_time", float("inf")))
+        if used_time + off_t <= max_time:
+            t["assigned_tier"] = "Tier-2"
             executed.append(t)
-            used_time += t["offload_time"]
+            used_time += off_t
         else:
-            # fallback → cannot fit in Tier-2
+            # fallback to Tier-1
             t["assigned_tier"] = "Tier-1"
             fallback.append(t)
+
+            # 🔹 Immediately push to Tier-1 scheduler (HEFT or Dif-Min)
+            fallback_allocations = tier1.add_to_tier1(t, use_heft=True)
+            if fallback_allocations:
+                # You can optionally handle/print the allocation results here
+                print("Tier-1 allocation:", fallback_allocations)
 
     return executed, fallback
