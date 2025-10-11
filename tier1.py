@@ -59,40 +59,16 @@ def inter_core_schedule(tasks):
 
     return allocations
 
-def dif_heft_schedule(tasks):
-    ready_time = {res: 0 for res in RESOURCES}
-    finish_times = {}
-    allocations = {}
-    avg_cost = {(t["timestamp"], t["task"]): sum(build_eet(t).values()) / len(RESOURCES) for t in tasks}
-    sorted_tasks = sorted(tasks, key=lambda t: avg_cost[(t["timestamp"], t["task"])], reverse=True)
 
-    for t in sorted_tasks:
-        tid = (t["timestamp"], t["task"])
-        deps = t.get("deps", [])
-        pred_finish = max(finish_times.get(d, 0) for d in deps) if deps else 0
-        eet_table = build_eet(t)
-
-        best_res, best_finish = None, float("inf")
-        for res in RESOURCES:
-            start_time = max(ready_time[res], pred_finish)
-            finish_time = start_time + eet_table[res]
-            if finish_time < best_finish:
-                best_finish = finish_time
-                best_res = res
-
-        allocations[tid] = (best_res, best_finish)
-        ready_time[best_res] = best_finish
-        finish_times[tid] = best_finish
-
-    return allocations
-
-def add_to_tier1(task, batch_size=5, use_heft=False):
+# === Add to Tier-1 Buffer (Dif-Min only) ===
+def add_to_tier1(task, batch_size=5):
+    """
+    Adds tasks to the Tier-1 buffer and schedules them using Dif-Min
+    once the batch size is reached.
+    """
     TIER1_BUFFER.append(task)
     if len(TIER1_BUFFER) >= batch_size:
-        if use_heft:
-            allocations = dif_heft_schedule(TIER1_BUFFER)
-        else:
-            allocations = inter_core_schedule(TIER1_BUFFER)
+        allocations = inter_core_schedule(TIER1_BUFFER)
         TIER1_BUFFER.clear()
         return allocations
     return None
