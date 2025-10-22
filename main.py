@@ -3,9 +3,18 @@ import heapq
 import time
 import threading
 
-import  QoE         # QoE enrichment module
+import QoE         # QoE enrichment module
 import tier1       # local edge node scheduling
 import tier2       # remote edge node scheduling
+import os, sys
+
+# Force Python to look in the current directory for local modules
+current_dir = os.path.dirname(os.path.abspath(__file__))
+if current_dir not in sys.path:
+    sys.path.append(current_dir)
+
+from visualize_metrics import visualize_all
+
 
 # === Global Task Queue ===
 task_queue = []
@@ -17,6 +26,10 @@ BATCH_SIZE = 5      # tasks per batch
 FLUSH_INTERVAL = 0.1  # 100 ms max wait before flushing
 
 last_flush_time = time.time()
+
+# === Tracking completed tasks for visualization ===
+COMPLETED_TASKS = []
+RESULTS = []
 
 
 # === Add Task ===
@@ -37,6 +50,8 @@ def flush_tier1():
     print("\n=== Tier-1 Batch Scheduled ===")
     for (ts, ttype), (res, ct) in result.items():
         print(f"Task {ttype} at ts={ts} → {res}, completion={ct:.2f}ms")
+        COMPLETED_TASKS.append({"timestamp": ts, "task": ttype, "tier": "Tier-1", "completion_ms": ct})
+        RESULTS.append((ct, ttype, "Tier-1"))
     TIER1_BUFFER.clear()
 
 
@@ -48,8 +63,9 @@ def flush_tier2(max_time=200):
     executed, fallback = tier2.schedule_tier2(TIER2_BUFFER, max_time=max_time)
     print("\n=== Tier-2 Batch Scheduled ===")
     for t in executed:
-        print(f"[REMOTE] Executed {t['task']} | ts={t['timestamp']} "
-              f"| deadline={t['deadline_ms']}ms")
+        print(f"[REMOTE] Executed {t['task']} | ts={t['timestamp']} | deadline={t['deadline_ms']}ms")
+        COMPLETED_TASKS.append({"timestamp": t["timestamp"], "task": t["task"], "tier": "Tier-2", "completion_ms": t.get("completion_time", 0)})
+        RESULTS.append((t.get("completion_time", 0), t["task"], "Tier-2"))
     for t in fallback:
         print(f"[FALLBACK] {t['task']} → pushed back to Tier-1")
         TIER1_BUFFER.append(t)
@@ -90,22 +106,21 @@ def scheduler_loop():
 def stream_inputs(slam_file, voice_file):
     """Simulate continuous arrival of sensor events."""
     with open(slam_file) as sf, open(voice_file) as vf:
-        slam_lines = iter(sf.readlines())
-        voice_lines = iter(vf.readlines())
+        slam_data = json.load(sf)["records"]
+        voice_data = json.load(vf)["records"]
+
+        slam_iter = iter(slam_data)
+        voice_iter = iter(voice_data)
 
         while True:
             try:
                 # Simulate SLAM input
-                sline = next(slam_lines).strip()
-                if sline:
-                    event = json.loads(sline)
-                    add_task(event, "slam")
+                s_event = next(slam_iter)
+                add_task(s_event, "slam")
 
                 # Simulate Voice input
-                vline = next(voice_lines).strip()
-                if vline:
-                    event = json.loads(vline)
-                    add_task(event, "voice_recognition")
+                v_event = next(voice_iter)
+                add_task(v_event, "voice_recognition")
 
                 time.sleep(0.05)  # simulate sensor arrival (50 ms)
 
@@ -121,9 +136,12 @@ if __name__ == "__main__":
     sched_thread.start()
 
     # Start input streaming
-    stream_inputs("slam_output.jsonl", "voice_output.jsonl")
+    stream_inputs("yolo_vo_state.json", "voice_output.json")
 
     # Let scheduler finish pending tasks
     time.sleep(2)
     flush_tier1()
     flush_tier2()
+
+    # Generate visualizations
+    visualize_all(COMPLETED_TASKS, RESULTS)

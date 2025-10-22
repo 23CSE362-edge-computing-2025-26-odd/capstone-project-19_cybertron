@@ -82,11 +82,23 @@ def enrich_task(ci_json, task_type, prev_task_ts=None, last_voice=None):
     local_time, local_energy = local_exec(w)
     offload_time, offload_energy = offload_exec(w, Din=Din, Dout=Dout)
 
+    # === QoE Weight Mapping ===
+    qoe_weight_map = {
+        "QoE-Safety": 1.0,
+        "QoE-Time": 0.8,
+        "QoE-Robustness": 0.6,
+        "QoE-Energy": 0.4,
+        "QoE-Insensitive": 0.2
+    }
+
+    qoe_weight = qoe_weight_map.get(qoe_class, 0.5)  # default fallback
+
     return {
         "task": task_type,
         "timestamp": ci_json["ts"],
         "deadline_ms": deadline,
         "QoE_class": qoe_class,
+        "QoE_weight": qoe_weight,          # ✅ Added this key
         "local_time": local_time,
         "local_energy": local_energy,
         "offload_time": offload_time,
@@ -94,7 +106,6 @@ def enrich_task(ci_json, task_type, prev_task_ts=None, last_voice=None):
         "data": ci_json
     }
 
-# === Unified Runtime Simulation ===
 def simulate_runtime(slam_file, voice_file):
     task_queue = []
     metrics = defaultdict(lambda: {"count": 0, "total_deadline": 0})
@@ -125,7 +136,7 @@ def simulate_runtime(slam_file, voice_file):
 
 # === Main Run ===
 if __name__ == "__main__":
-    tasks, metrics = simulate_runtime("slam_output.jsonl", "voice_output.jsonl")
+    tasks, metrics = simulate_runtime("yolo_vo_state.jsonl", "voice_output.jsonl")
 
     print("\n=== Final Task Queue (min-heap order by deadline) ===")
     for deadline, task in tasks:

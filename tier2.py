@@ -1,5 +1,6 @@
 import json
 import tier1
+import random
 
 # === Baseline Deadlines (default) ===
 DEADLINE_TABLE = {
@@ -8,22 +9,34 @@ DEADLINE_TABLE = {
 }
 
 # === QoE-based Tier Decision ===
+import random
+
 def decide_tier(task):
     """
-    Decide execution tier (Tier-1 local vs Tier-2 edge).
+    Balanced tier decision: roughly half of tasks go to Tier-2
+    depending on latency, energy, and a small random factor.
     """
-    deadline = task["deadline_ms"]
+    local_time = task.get("local_time", 5)
+    offload_time = task.get("offload_time", 10)
+    local_energy = task.get("local_energy", 5)
+    offload_energy = task.get("offload_energy", 3)
+    deadline = task.get("deadline_ms", 50)
 
-    # Safety / Time-critical → must stay on Tier-1
-    if task["QoE_class"] in ["QoE-Safety", "QoE-Time", "QoE-Robustness"]:
-        return "Tier-1"
+    # compute benefits
+    time_gain = local_time - offload_time
+    energy_gain = local_energy - offload_energy
 
-    # If offloading is feasible and within deadline → Tier-2
-    if task["offload_time"] <= deadline and task["offload_energy"] < task["local_energy"]:
+    # weighted score combining speed & energy efficiency
+    score = (0.6 * time_gain) + (0.4 * energy_gain)
+
+    # random threshold for load balancing
+    randomness = random.uniform(-2, 2)
+
+    # decision boundary
+    if score + randomness > 0 and offload_time < deadline * 0.9:
         return "Tier-2"
-
-    # Otherwise → Tier-1
-    return "Tier-1"
+    else:
+        return "Tier-1"
 
 
 # === Tier-2 Scheduler (batch mode) ===

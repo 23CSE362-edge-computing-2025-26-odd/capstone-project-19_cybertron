@@ -6,7 +6,7 @@ import time
 import os
 
 MODEL_ID = "yolov5n"
-INPUT = "C:/Users/chsai/OneDrive/Desktop/review_2_combined_yolo_slam/4K Road traffic video for object detection and tracking - free download now.mp4"  # 0 = webcam or r"C:/path/to/video.mp4"
+INPUT = "C:\\Users\\krjee\\OneDrive\\Desktop\\carvid.mp4"
 DISPLAY = True
 FRAME_SKIP = 4
 JSON_PATH = "yolo_vo_state.json"
